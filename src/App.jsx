@@ -1,7 +1,7 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
-const API_URL = "http://127.0.0.1:5000/api/colorize";
+const API_URL = "https://colorfusion-api.onrender.com/api/colorize";
 
 function App() {
   const [file, setFile] = useState(null);
