@@ -1,21 +1,45 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import "./App.css";
-
-// Production ColorFusion AI backend
-const API_URL = "https://colorfusion-api.onrender.com/api/colorize";
+import { colorizeImage, loadDDColorModel } from "./services/ddcolorBrowser";
 
 function App() {
+  const [modelReady, setModelReady] = useState(false);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState("");
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
+  const [progressText, setProgressText] = useState("");
   const inputRef = useRef(null);
 
   useEffect(() => {
+    let mounted = true;
+
+    loadDDColorModel()
+      .then(() => {
+        if (mounted) {
+          setModelReady(true);
+        }
+      })
+      .catch((err) => {
+        console.error("DDColor model loading failed:", err);
+
+        if (mounted) {
+          setError("Unable to load the DDColor AI model.");
+        }
+      });
+
     return () => {
-      if (preview) URL.revokeObjectURL(preview);
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (preview) {
+        URL.revokeObjectURL(preview);
+      }
     };
   }, [preview]);
 
@@ -24,6 +48,7 @@ function App() {
 
     setError("");
     setResult("");
+    setProgressText("");
 
     if (!selectedFile.type.startsWith("image/")) {
       setError("Please select a valid image file.");
@@ -35,7 +60,9 @@ function App() {
       return;
     }
 
-    if (preview) URL.revokeObjectURL(preview);
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
 
     setFile(selectedFile);
     setPreview(URL.createObjectURL(selectedFile));
@@ -49,82 +76,89 @@ function App() {
   const handleDrop = (event) => {
     event.preventDefault();
     setDragActive(false);
+
     handleFile(event.dataTransfer.files?.[0]);
   };
 
   const handleColorize = async () => {
-    if (!file) return;
+    if (!file || loading) return;
+
+    if (!modelReady) {
+      setError("DDColor AI is still loading. Please wait a moment.");
+      return;
+    }
 
     setLoading(true);
     setError("");
     setResult("");
 
     try {
-      const formData = new FormData();
-      formData.append("image", file);
-
-      const response = await fetch(API_URL, {
-        method: "POST",
-        body: formData,
+      const { blob } = await colorizeImage(file, (message) => {
+        setProgressText(message);
       });
 
-      if (!response.ok) {
-        let message = "Colorization failed.";
-
-        try {
-          const data = await response.json();
-          message = data.error || message;
-        } catch {
-          // Ignore non-JSON error responses.
-        }
-
-        throw new Error(message);
-      }
-
-      const blob = await response.blob();
       const resultUrl = URL.createObjectURL(blob);
 
       setResult(resultUrl);
+      setProgressText("Colorization complete!");
     } catch (err) {
-      setError(
-        err.message || "Unable to connect to the ColorFusion AI backend.",
-      );
+      console.error("Colorization error:", err);
+
+      setError(err?.message || "Unable to colorize this image.");
+
+      setProgressText("");
     } finally {
       setLoading(false);
     }
   };
 
   const chooseAnother = () => {
-    if (preview) URL.revokeObjectURL(preview);
-    if (result) URL.revokeObjectURL(result);
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+
+    if (result) {
+      URL.revokeObjectURL(result);
+    }
 
     setFile(null);
     setPreview("");
     setResult("");
     setError("");
+    setProgressText("");
 
     inputRef.current?.click();
   };
 
   const resetProject = () => {
-    if (preview) URL.revokeObjectURL(preview);
-    if (result) URL.revokeObjectURL(result);
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+
+    if (result) {
+      URL.revokeObjectURL(result);
+    }
 
     setFile(null);
     setPreview("");
     setResult("");
     setError("");
+    setProgressText("");
   };
 
   const formatSize = (bytes) => {
     if (!bytes) return "0 KB";
 
     const units = ["Bytes", "KB", "MB", "GB"];
-    const index = Math.floor(Math.log(bytes) / Math.log(1024));
 
-    return `${(bytes / Math.pow(1024, index)).toFixed(
-      index === 0 ? 0 : 1,
-    )} ${units[index]}`;
+    const index = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(1024)),
+      units.length - 1,
+    );
+
+    return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1)} ${
+      units[index]
+    }`;
   };
 
   return (
@@ -143,8 +177,9 @@ function App() {
         </button>
 
         <div className="status-pill">
-          <span className="status-dot" />
-          AI Ready
+          <span className={`status-dot ${modelReady ? "" : "loading"}`} />
+
+          {modelReady ? "AI Ready" : "Loading AI"}
         </div>
       </header>
 
@@ -236,6 +271,7 @@ function App() {
                 <div className="card-header">
                   <div>
                     <span className="card-label">ORIGINAL</span>
+
                     <h3>{file.name}</h3>
                   </div>
 
@@ -250,7 +286,9 @@ function App() {
                   <span>
                     {file.type.split("/")[1]?.toUpperCase() || "IMAGE"}
                   </span>
+
                   <span>•</span>
+
                   <span>{formatSize(file.size)}</span>
                 </div>
               </article>
@@ -262,6 +300,7 @@ function App() {
                       <span className="card-label result-label">
                         COLORIZED RESULT
                       </span>
+
                       <h3>AI enhanced photo</h3>
                     </div>
 
@@ -276,7 +315,10 @@ function App() {
                     <a
                       className="primary-button"
                       href={result}
-                      download={`colorfusion-${file.name}`}
+                      download={`colorfusion-${file.name.replace(
+                        /\.[^/.]+$/,
+                        "",
+                      )}.webp`}
                     >
                       <span>↓</span>
                       Download Result
@@ -300,31 +342,35 @@ function App() {
 
                     <span className="card-label">AI PREVIEW</span>
 
-                    <h3>Ready when you are</h3>
+                    <h3>
+                      {modelReady ? "Ready when you are" : "Loading AI model"}
+                    </h3>
 
-                    <p>Click below to transform your photo with DDColor AI.</p>
+                    <p>
+                      {modelReady
+                        ? "Click below to transform your photo with DDColor AI."
+                        : "Please wait while the DDColor model loads in your browser."}
+                    </p>
 
                     <button
                       className="primary-button colorize-button"
                       onClick={handleColorize}
-                      disabled={loading}
+                      disabled={loading || !modelReady}
                     >
                       {loading ? (
                         <>
                           <span className="spinner" />
-                          Processing image...
+                          {progressText || "Processing image..."}
                         </>
                       ) : (
                         <>
                           <span>✦</span>
-                          Colorize Image
+                          {modelReady ? "Colorize Image" : "Loading AI..."}
                         </>
                       )}
                     </button>
 
-                    <small>
-                      Processing happens through the ColorFusion AI backend.
-                    </small>
+                    <small>AI processing runs directly in your browser.</small>
                   </div>
                 </article>
               )}
@@ -335,8 +381,9 @@ function App() {
                 <div className="processing-spinner" />
 
                 <div>
-                  <strong>Colorizing your photo...</strong>
-                  <span>DDColor AI is analyzing the image.</span>
+                  <strong>{progressText || "Colorizing your photo..."}</strong>
+
+                  <span>Your image stays on your device.</span>
                 </div>
               </div>
             )}
@@ -348,6 +395,7 @@ function App() {
 
       <footer className="footer">
         <span>ColorFusion</span>
+
         <span>AI-powered photo colorization</span>
       </footer>
     </div>
