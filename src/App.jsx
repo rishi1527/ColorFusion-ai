@@ -1,6 +1,7 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
+// Production ColorFusion AI backend
 const API_URL = "https://colorfusion-api.onrender.com/api/colorize";
 
 function App() {
@@ -86,8 +87,7 @@ function App() {
       setResult(resultUrl);
     } catch (err) {
       setError(
-        err.message ||
-          "Unable to connect to the ColorFusion AI backend."
+        err.message || "Unable to connect to the ColorFusion AI backend.",
       );
     } finally {
       setLoading(false);
@@ -123,7 +123,7 @@ function App() {
     const index = Math.floor(Math.log(bytes) / Math.log(1024));
 
     return `${(bytes / Math.pow(1024, index)).toFixed(
-      index === 0 ? 0 : 1
+      index === 0 ? 0 : 1,
     )} ${units[index]}`;
   };
 
@@ -163,14 +163,12 @@ function App() {
             </h1>
 
             <p className="hero-description">
-              Transform black & white memories into natural-looking
-              color with AI-powered photo restoration.
+              Transform black & white memories into natural-looking color with
+              AI-powered photo restoration.
             </p>
 
             <div
-              className={`upload-card ${
-                dragActive ? "drag-active" : ""
-              }`}
+              className={`upload-card ${dragActive ? "drag-active" : ""}`}
               onDragOver={(event) => {
                 event.preventDefault();
                 setDragActive(true);
@@ -210,9 +208,7 @@ function App() {
           <section className="workspace">
             <div className="workspace-heading">
               <div>
-                <div className="section-eyebrow">
-                  PHOTO WORKSPACE
-                </div>
+                <div className="section-eyebrow">PHOTO WORKSPACE</div>
 
                 <h1>
                   {result ? "Your photo, reimagined." : "Ready to colorize."}
@@ -251,7 +247,9 @@ function App() {
                 </div>
 
                 <div className="file-info">
-                  <span>{file.type.split("/")[1]?.toUpperCase() || "IMAGE"}</span>
+                  <span>
+                    {file.type.split("/")[1]?.toUpperCase() || "IMAGE"}
+                  </span>
                   <span>•</span>
                   <span>{formatSize(file.size)}</span>
                 </div>
@@ -304,10 +302,7 @@ function App() {
 
                     <h3>Ready when you are</h3>
 
-                    <p>
-                      Click below to transform your photo with
-                      DDColor AI.
-                    </p>
+                    <p>Click below to transform your photo with DDColor AI.</p>
 
                     <button
                       className="primary-button colorize-button"
@@ -328,8 +323,7 @@ function App() {
                     </button>
 
                     <small>
-                      Processing happens locally through your
-                      ColorFusion AI backend.
+                      Processing happens through the ColorFusion AI backend.
                     </small>
                   </div>
                 </article>
@@ -339,6 +333,7 @@ function App() {
             {loading && (
               <div className="processing-bar">
                 <div className="processing-spinner" />
+
                 <div>
                   <strong>Colorizing your photo...</strong>
                   <span>DDColor AI is analyzing the image.</span>
