@@ -1,4 +1,7 @@
-Flask
+﻿Flask
 Flask-Cors
-opencv-python
+opencv-python-headless
 numpy
+onnxruntime
+gunicorn
+requests

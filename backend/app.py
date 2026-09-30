@@ -4,10 +4,12 @@ from flask_cors import CORS
 import cv2
 import numpy as np
 import onnxruntime as ort
+import requests
 
 from io import BytesIO
 from pathlib import Path
 import time
+import os
 
 
 # =========================================================
@@ -34,7 +36,200 @@ app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024
 
 BASE_DIR = Path(__file__).resolve().parent
 
-MODEL_PATH = BASE_DIR / "models" / "ddcolor-tiny.onnx"
+MODEL_DIR = BASE_DIR / "models"
+
+MODEL_PATH = MODEL_DIR / "ddcolor-tiny.onnx"
+
+MODEL_TEMP_PATH = MODEL_DIR / "ddcolor-tiny.onnx.download"
+
+
+# =========================================================
+# MODEL DOWNLOAD CONFIG
+# =========================================================
+
+MODEL_URL = (
+    "https://github.com/rishi1527/ColorFusion-ai/"
+    "releases/download/v1.0.0/ddcolor-tiny.onnx"
+)
+
+
+# =========================================================
+# DOWNLOAD DDColor MODEL
+# =========================================================
+
+def download_model():
+    """
+    Download DDColor Tiny ONNX model from GitHub Release
+    if it does not already exist locally.
+    """
+
+    if MODEL_PATH.exists():
+        model_size_mb = MODEL_PATH.stat().st_size / (1024 * 1024)
+
+        print()
+        print("DDColor model already exists.")
+        print(f"Model: {MODEL_PATH}")
+        print(f"Size : {model_size_mb:.2f} MB")
+
+        return
+
+    MODEL_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    print()
+    print("=" * 60)
+    print("DOWNLOADING DDColor TINY ONNX MODEL")
+    print("=" * 60)
+    print()
+    print(f"Source: {MODEL_URL}")
+    print(f"Target: {MODEL_PATH}")
+    print()
+
+    try:
+
+        response = requests.get(
+            MODEL_URL,
+            stream=True,
+            timeout=(30, 600),
+            headers={
+                "User-Agent": "ColorFusion-AI"
+            }
+        )
+
+        response.raise_for_status()
+
+        total_size = int(
+            response.headers.get(
+                "content-length",
+                0
+            )
+        )
+
+        downloaded = 0
+
+        with open(
+            MODEL_TEMP_PATH,
+            "wb"
+        ) as model_file:
+
+            for chunk in response.iter_content(
+                chunk_size=1024 * 1024
+            ):
+
+                if not chunk:
+                    continue
+
+                model_file.write(chunk)
+
+                downloaded += len(chunk)
+
+                if total_size:
+
+                    percent = (
+                        downloaded / total_size
+                    ) * 100
+
+                    downloaded_mb = (
+                        downloaded /
+                        (1024 * 1024)
+                    )
+
+                    total_mb = (
+                        total_size /
+                        (1024 * 1024)
+                    )
+
+                    print(
+                        f"\rDownloading: "
+                        f"{percent:6.2f}% "
+                        f"({downloaded_mb:.1f}/{total_mb:.1f} MB)",
+                        end=""
+                    )
+
+        print()
+        print()
+
+        # -------------------------------------------------
+        # Validate downloaded file
+        # -------------------------------------------------
+
+        if not MODEL_TEMP_PATH.exists():
+            raise RuntimeError(
+                "Model download completed but "
+                "temporary file was not created."
+            )
+
+        downloaded_size = MODEL_TEMP_PATH.stat().st_size
+
+        if downloaded_size < 100 * 1024 * 1024:
+            raise RuntimeError(
+                "Downloaded model appears to be invalid "
+                f"or incomplete. Size: {downloaded_size} bytes."
+            )
+
+        # -------------------------------------------------
+        # Move temporary file to final location
+        # -------------------------------------------------
+
+        MODEL_TEMP_PATH.replace(
+            MODEL_PATH
+        )
+
+        model_size_mb = (
+            MODEL_PATH.stat().st_size /
+            (1024 * 1024)
+        )
+
+        print(
+            f"✓ DDColor model downloaded successfully!"
+        )
+
+        print(
+            f"✓ Model size: {model_size_mb:.2f} MB"
+        )
+
+        print(
+            f"✓ Saved to: {MODEL_PATH}"
+        )
+
+        print()
+        print("=" * 60)
+        print()
+
+    except Exception as error:
+
+        # Remove incomplete download
+        if MODEL_TEMP_PATH.exists():
+            try:
+                MODEL_TEMP_PATH.unlink()
+            except Exception:
+                pass
+
+        print()
+        print("MODEL DOWNLOAD ERROR:")
+        print(error)
+        print()
+
+        raise RuntimeError(
+            "Could not download DDColor Tiny ONNX model."
+        ) from error
+
+
+# =========================================================
+# APP STARTUP
+# =========================================================
+
+print()
+print("=" * 60)
+print("                 COLORFUSION AI")
+print("=" * 60)
+
+print()
+print("Checking DDColor Tiny ONNX model...")
+
+download_model()
 
 
 # =========================================================
@@ -42,43 +237,41 @@ MODEL_PATH = BASE_DIR / "models" / "ddcolor-tiny.onnx"
 # =========================================================
 
 print()
-print("=" * 55)
-print("             COLORFUSION AI")
-print("=" * 55)
-
-print()
 print("Loading DDColor Tiny ONNX...")
 print(f"Model: {MODEL_PATH}")
 
-if not MODEL_PATH.exists():
-    raise FileNotFoundError(
-        f"DDColor model not found:\n{MODEL_PATH}"
-    )
-
-
 session = ort.InferenceSession(
     str(MODEL_PATH),
-    providers=["CPUExecutionProvider"]
+    providers=[
+        "CPUExecutionProvider"
+    ]
 )
 
 INPUT_NAME = session.get_inputs()[0].name
+
 OUTPUT_NAME = session.get_outputs()[0].name
 
 INPUT_SHAPE = session.get_inputs()[0].shape
+
 OUTPUT_SHAPE = session.get_outputs()[0].shape
 
 
 print()
 print("✓ DDColor model loaded successfully!")
-print(f"Input : {INPUT_NAME} {INPUT_SHAPE}")
-print(f"Output: {OUTPUT_NAME} {OUTPUT_SHAPE}")
+
+print(
+    f"Input : {INPUT_NAME} {INPUT_SHAPE}"
+)
+
+print(
+    f"Output: {OUTPUT_NAME} {OUTPUT_SHAPE}"
+)
 
 print()
-print("Backend:")
-print("http://127.0.0.1:5000")
+print("Runtime: ONNX Runtime CPU")
 
 print()
-print("=" * 55)
+print("=" * 60)
 print()
 
 
@@ -88,6 +281,7 @@ print()
 
 @app.get("/api/health")
 def health():
+
     return jsonify({
         "status": "ok",
         "service": "ColorFusion AI",
@@ -104,7 +298,7 @@ def health():
 
 def colorize_image(img_bgr):
     """
-    Official DDColor-style preprocessing/postprocessing.
+    DDColor-style preprocessing/postprocessing.
 
     Input:
         BGR uint8 image
@@ -214,7 +408,11 @@ def colorize_image(img_bgr):
     output_ab = output_ab[0]
 
     output_ab_resized = cv2.resize(
-        output_ab.transpose(1, 2, 0),
+        output_ab.transpose(
+            1,
+            2,
+            0
+        ),
         (width, height),
         interpolation=cv2.INTER_LINEAR
     )
@@ -245,7 +443,11 @@ def colorize_image(img_bgr):
     # -----------------------------------------------------
 
     output_img = (
-        np.clip(output_bgr, 0.0, 1.0) * 255.0
+        np.clip(
+            output_bgr,
+            0.0,
+            1.0
+        ) * 255.0
     ).round().astype(np.uint8)
 
     return output_img
@@ -261,27 +463,34 @@ def colorize():
     start_time = time.time()
 
     print()
-    print("=" * 55)
+    print("=" * 60)
     print("NEW COLORIZATION REQUEST")
-    print("=" * 55)
+    print("=" * 60)
 
     # -----------------------------------------------------
     # Check upload
     # -----------------------------------------------------
 
     if "image" not in request.files:
+
         return jsonify({
-            "error": "No image uploaded. Use form field 'image'."
+            "error": (
+                "No image uploaded. "
+                "Use form field 'image'."
+            )
         }), 400
 
     file = request.files["image"]
 
     if not file.filename:
+
         return jsonify({
             "error": "No filename provided."
         }), 400
 
-    print(f"Image: {file.filename}")
+    print(
+        f"Image: {file.filename}"
+    )
 
     # -----------------------------------------------------
     # Read image bytes
@@ -290,6 +499,7 @@ def colorize():
     image_bytes = file.read()
 
     if not image_bytes:
+
         return jsonify({
             "error": "Uploaded image is empty."
         }), 400
@@ -309,24 +519,36 @@ def colorize():
     )
 
     if img is None:
+
         return jsonify({
-            "error": "Could not decode image. Please upload JPG, JPEG or PNG."
+            "error": (
+                "Could not decode image. "
+                "Please upload JPG, JPEG or PNG."
+            )
         }), 400
 
     height, width = img.shape[:2]
 
-    print(f"Size: {width} x {height}")
+    print(
+        f"Size: {width} x {height}"
+    )
 
     # -----------------------------------------------------
     # Run AI
     # -----------------------------------------------------
 
-    print("Running DDColor AI...")
+    print(
+        "Running DDColor AI..."
+    )
 
     try:
-        result = colorize_image(img)
+
+        result = colorize_image(
+            img
+        )
 
     except Exception as error:
+
         print()
         print("COLORIZATION ERROR:")
         print(error)
@@ -350,20 +572,30 @@ def colorize():
     )
 
     if not success:
+
         return jsonify({
-            "error": "Could not encode colorized image."
+            "error": (
+                "Could not encode "
+                "colorized image."
+            )
         }), 500
 
     output_bytes = encoded.tobytes()
 
-    elapsed = time.time() - start_time
+    elapsed = (
+        time.time() -
+        start_time
+    )
 
     print(
         f"✓ Colorization complete "
         f"in {elapsed:.2f} seconds"
     )
 
-    print("=" * 55)
+    print(
+        "=" * 60
+    )
+
     print()
 
     # -----------------------------------------------------
@@ -384,8 +616,12 @@ def colorize():
 
 @app.errorhandler(413)
 def file_too_large(error):
+
     return jsonify({
-        "error": "Image is too large. Maximum size is 15 MB."
+        "error": (
+            "Image is too large. "
+            "Maximum size is 15 MB."
+        )
     }), 413
 
 
@@ -395,8 +631,15 @@ def file_too_large(error):
 
 if __name__ == "__main__":
 
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
+
     app.run(
-        host="127.0.0.1",
-        port=5000,
+        host="0.0.0.0",
+        port=port,
         debug=False
     )
